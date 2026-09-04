@@ -1,0 +1,8 @@
+streamlit==1.60.0
+pandas==3.0.5
+holidays==0.102
+numpy==2.5.1
+folium==0.20.0
+requests==2.34.2
+scikit-learn==1.9.0
+openpyxl==3.1.5
