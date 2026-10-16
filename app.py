@@ -104,7 +104,7 @@ if modo_app == "Geocodificador (Google Maps)":
                     st.success(f"✅ ¡Dirección encontrada con éxito! Latitud: `{lat_res}`, Longitud: `{lon_res}`")
                     
                     # Mostrar mapa interactivo de prueba
-                    m_test = folium.Map(location=[lat_res, lon_res], zoom_start=15, tiles="CartoDB positron")
+                    m_test = folium.Map(location=[lat_res, lon_res], zoom_start=15, tiles="OpenStreetMap")
                     folium.Marker(
                         location=[lat_res, lon_res],
                         popup=f"<b>Prueba:</b> {test_dir_input}",
@@ -435,15 +435,6 @@ def puede_agregar_a_dia(puntos_dia, nuevo):
                 return False
     return True
 
-# ANTIGUA LOGICA
-# def _coords_km(lats, lons):
-#     """Proyección local a km para que K-Means no distorsione longitud vs latitud."""
-#     lat_ref = float(np.mean(lats))
-#     scale_lon = 111.32 * math.cos(math.radians(lat_ref))
-#     x = np.array(lons, dtype=float) * scale_lon
-#     y = np.array(lats, dtype=float) * 110.57
-#     return np.column_stack([x, y])
-
 def _coords_km(lats, lons):
     """Proyección local a km para que K-Means no distorsione longitud vs latitud."""
     lat_ref = float(np.mean(lats))
@@ -452,72 +443,7 @@ def _coords_km(lats, lons):
     y = np.array(lats, dtype=float) * 110.57
     return np.column_stack([x, y])
 
-# ANTIGUA LOGICA
-# def clusterizar_macrozonas(df_user, n_dias, cap_diaria):
-#     """
-#     Segmenta PDVs en macro-zonas con K-Means (antes de asignar días).
-#     Parte clusters cuyo diámetro geodésico supera 17 km.
-#     """
-#     df_user = df_user.copy()
-#     df_u = df_user.drop_duplicates(subset=["CODIGO PDV"]).copy()
-#     n = len(df_u)
-#     if n == 0:
-#         df_user["MACROZONA"] = 0
-#         return df_user
-#     if n == 1:
-#         df_user["MACROZONA"] = 0
-#         return df_user
 
-#     lats = df_u["LATITUD_CLEAN"].astype(float).to_numpy()
-#     lons = df_u["LONGITUD_CLEAN"].astype(float).to_numpy()
-#     xy = _coords_km(lats, lons)
-
-#     n_coords_unicas = np.unique(np.round(xy, 5), axis=0).shape[0]
-#     k_carga = max(1, math.ceil(n / max(int(cap_diaria), 1)))
-#     k = max(1, min(n, n_coords_unicas, k_carga, max(1, n_dias)))
-
-#     try:
-#         labels = KMeans(n_clusters=k, n_init=10, random_state=42, max_iter=300).fit_predict(xy)
-#     except Exception:
-#         labels = np.zeros(n, dtype=int)
-
-#     df_u = df_u.reset_index(drop=True)
-#     df_u["MACROZONA"] = labels.astype(int)
-
-#     next_id = int(df_u["MACROZONA"].max()) + 1
-#     changed = True
-#     while changed:
-#         changed = False
-#         for zona in list(df_u["MACROZONA"].unique()):
-#             mask = df_u["MACROZONA"] == zona
-#             subset = df_u.loc[mask]
-#             if len(subset) < 3:
-#                 continue
-#             puntos = subset.to_dict("records")
-#             if diametro_geodesico(puntos) <= LIMITE_ABSOLUTO_KM:
-#                 continue
-#             xy_sub = _coords_km(
-#                 subset["LATITUD_CLEAN"].astype(float).to_numpy(),
-#                 subset["LONGITUD_CLEAN"].astype(float).to_numpy(),
-#             )
-#             n_sub_unique = np.unique(np.round(xy_sub, 5), axis=0).shape[0]
-#             if n_sub_unique < 2:
-#                 continue
-#             try:
-#                 sub_labels = KMeans(n_clusters=2, n_init=10, random_state=42, max_iter=300).fit_predict(xy_sub)
-#             except Exception:
-#                 continue
-#             idxs = subset.index.tolist()
-#             for local_i, idx_fila in enumerate(idxs):
-#                 if sub_labels[local_i] == 1:
-#                     df_u.at[idx_fila, "MACROZONA"] = next_id
-#             next_id += 1
-#             changed = True
-#             break
-
-#     mapa_zona = dict(zip(df_u["CODIGO PDV"], df_u["MACROZONA"]))
-#     df_user["MACROZONA"] = df_user["CODIGO PDV"].map(mapa_zona).fillna(0).astype(int)
-#     return df_user
 
 def clusterizar_macrozonas(df_user, n_dias, cap_diaria):
     """
@@ -629,481 +555,272 @@ def ordenar_ruta_diaria(puntos_del_dia):
     return visitados
 
 
-# ANTIGUA LOGICA
-# def ajustar_frecuencias_y_capacidades(df_user, dias_L_V, total_sabados):
-#     """
-#     Se simplifica. La reducción en cascada ya no se hace a ciegas aquí.
-#     Se delega al simulador de rutas que conoce la geografía y los topes por cercanía.
-#     """
-#     cap_L_V_diaria = 8
-#     cap_sab_diaria = 4
-#     supera_recomendado = df_user['CANTIDAD VISITAS'].sum() > ((dias_L_V * 8) + (total_sabados * 4))
-#     return df_user, cap_L_V_diaria, cap_sab_diaria, supera_recomendado
-
 def ajustar_frecuencias_y_capacidades(df_user, dias_L_V, total_sabados):
     """
-    Se simplifica. La reducción en cascada ya no se hace a ciegas aquí.
-    Se delega al simulador de rutas que conoce la geografía y los topes por cercanía.
+    Evalúa la capacidad de visitas del usuario respecto al máximo ideal.
+    Máximo ideal: (dias_L_V * 8) + (total_sabados * 4).
     """
     cap_L_V_diaria = 8
     cap_sab_diaria = 4
     supera_recomendado = df_user['CANTIDAD VISITAS'].sum() > ((dias_L_V * 8) + (total_sabados * 4))
     return df_user, cap_L_V_diaria, cap_sab_diaria, supera_recomendado
 
-# ANTIGUA LOGICA
-# def procesar_rutas_usuario(df_user, dias_habiles_lista, cap_L_V_diaria, cap_sab_diaria):
-#     df_user = df_user.dropna(subset=['LATITUD_CLEAN', 'LONGITUD_CLEAN'])
-#     if df_user.empty: return []
 
-#     n_dias = max(1, len(dias_habiles_lista))
-#     df_user = clusterizar_macrozonas(df_user, n_dias, cap_L_V_diaria)
-
-#     visitas_totales = df_user['CANTIDAD VISITAS'].sum()
-#     capacidades_por_dia = {d: 0 for d in dias_habiles_lista}
-    
-#     # 1. Balanceo de Carga Plano (Round Robin) — sin cambio de reglas de cupo
-#     restantes = visitas_totales
-#     while restantes > 0:
-#         candidatos = []
-#         for d in dias_habiles_lista:
-#             es_sab = (d.weekday() == 5)
-#             max_c = cap_sab_diaria if es_sab else cap_L_V_diaria
-#             if capacidades_por_dia[d] < max_c:
-#                 candidatos.append(d)
-        
-#         if not candidatos:
-#             break
-            
-#         candidatos.sort(key=lambda d: (capacidades_por_dia[d], 1 if d.weekday() == 5 else 0, d))
-#         mejor_d = candidatos[0]
-#         capacidades_por_dia[mejor_d] += 1
-#         restantes -= 1
-
-#     puntos_por_dia = {d: [] for d in dias_habiles_lista}
-    
-#     def centroide_dia(d):
-#         if not puntos_por_dia[d]: return None
-#         lats = [p['LATITUD_CLEAN'] for p in puntos_por_dia[d]]
-#         lons = [p['LONGITUD_CLEAN'] for p in puntos_por_dia[d]]
-#         return (sum(lats)/len(lats), sum(lons)/len(lons))
-
-#     def afinidad_macrozona(d, zona):
-#         pts = puntos_por_dia[d]
-#         if not pts:
-#             return 1
-#         mismas = sum(1 for p in pts if int(p.get('MACROZONA', -1)) == int(zona))
-#         if mismas == len(pts):
-#             return 0
-#         if mismas > 0:
-#             return 1
-#         return 2
-
-#     visitas_programadas = []
-#     df_user_sorted = df_user.sort_values(
-#         by=['MACROZONA', 'CANTIDAD VISITAS', 'LATITUD_CLEAN'],
-#         ascending=[True, False, False],
-#     )
-    
-#     for idx, row in df_user_sorted.iterrows():
-#         frecuencia = int(row['CANTIDAD VISITAS'])
-#         lat, lon = row['LATITUD_CLEAN'], row['LONGITUD_CLEAN']
-#         zona = int(row.get('MACROZONA', 0))
-        
-#         fechas_asignadas = []
-#         for v in range(frecuencia):
-#             candidatos = []
-#             for d in dias_habiles_lista:
-#                 if capacidades_por_dia[d] > 0:
-#                     if not fechas_asignadas:
-#                         candidatos.append(d)
-#                     else:
-#                         if all(abs((d - f).days) >= 8 for f in fechas_asignadas):
-#                             candidatos.append(d)
-            
-#             if not candidatos and v > 0:
-#                 candidatos = [d for d in dias_habiles_lista if capacidades_por_dia[d] > 0]
-                
-#             factibles = [d for d in candidatos if puede_agregar_a_dia(puntos_por_dia[d], row)]
-#             pool = factibles if factibles else candidatos
-
-#             mejor_dia = None
-#             mejor_key = None
-#             for d in pool:
-#                 c = centroide_dia(d)
-#                 if c is None:
-#                     dist = UMBRAL_NUEVO_DIA
-#                 else:
-#                     dist = haversine_distance(lat, lon, c[0], c[1])
-#                 if puntos_por_dia[d]:
-#                     dist_punto_cercano = min(
-#                         haversine_distance(
-#                             lat, lon, p['LATITUD_CLEAN'], p['LONGITUD_CLEAN']
-#                         ) for p in puntos_por_dia[d]
-#                     )
-#                 else:
-#                     dist_punto_cercano = UMBRAL_NUEVO_DIA
-#                 penal_limite = 0 if d in factibles else 1
-#                 key = (penal_limite, dist_punto_cercano, afinidad_macrozona(d, zona), dist, d)
-#                 if mejor_key is None or key < mejor_key:
-#                     mejor_key = key
-#                     mejor_dia = d
-                    
-#             if mejor_dia:
-#                 fechas_asignadas.append(mejor_dia)
-#                 capacidades_por_dia[mejor_dia] -= 1
-#                 puntos_por_dia[mejor_dia].append(row)
-#                 visitas_programadas.append({'FECHA': mejor_dia, 'DATA': row})
-
-#     rutas_optimizadas = []
-#     df_visitas = pd.DataFrame(visitas_programadas)
-    
-#     if df_visitas.empty: return []
-    
-#     dias_con_visitas = df_visitas['FECHA'].unique()
-#     dias_semana_es = {0: 'LUNES', 1: 'MARTES', 2: 'MIÉRCOLES', 3: 'JUEVES', 4: 'VIERNES', 5: 'SÁBADO', 6: 'DOMINGO'}
-    
-#     for dia in sorted(dias_con_visitas):
-#         puntos_del_dia = df_visitas[df_visitas['FECHA'] == dia]['DATA'].tolist()
-#         if not puntos_del_dia: continue
-        
-#         visitados = ordenar_ruta_diaria(puntos_del_dia)
-            
-#         hora_llegada_acumulada = 0.0
-        
-#         for orden, p in enumerate(visitados, 1):
-#             horas_visita = 0.75
-#             usuario = str(p.get('USUARIO', '')).lower()
-#             cadena = str(p.get('CADENA', '')).upper()
-            
-#             if usuario == "zona.panaleras":
-#                 horas_visita = 2.0
-#             elif cadena == "FARMATODO":
-#                 horas_visita = 1.0
-                
-#             fila = p.to_dict()
-#             fila['FECHA_PROGRAMADA'] = dia.strftime("%d/%m/%Y")
-#             fila['DIA_SEMANA'] = dias_semana_es[dia.weekday()]
-#             fila['ORDEN_VISITA'] = orden
-#             fila['HORAS_VISITA'] = horas_visita
-#             fila['HORA_LLEGADA_ESTIMADA (Hrs)'] = round(hora_llegada_acumulada, 2)
-            
-#             hora_llegada_acumulada += horas_visita + 0.25 
-#             fila['JORNADA_FINAL_DIA (Hrs)'] = round(hora_llegada_acumulada - 0.25, 2)
-            
-#             rutas_optimizadas.append(fila)
-            
-#         coords_str = "/".join([f"{p['LATITUD_CLEAN']},{p['LONGITUD_CLEAN']}" for p in visitados])
-#         link_maps = f"https://www.google.com/maps/dir/{coords_str}"
-        
-#         for r in rutas_optimizadas[-len(visitados):]:
-#             r['LINK_GOOGLE_MAPS'] = link_maps
-            
-#     return rutas_optimizadas
-
-# def procesar_rutas_usuario(df_user, dias_habiles_lista, cap_L_V_diaria, cap_sab_diaria):
-#     df_user = df_user.dropna(subset=['LATITUD_CLEAN', 'LONGITUD_CLEAN'])
-#     if df_user.empty: return []
-
-#     n_dias = max(1, len(dias_habiles_lista))
-#     df_user = clusterizar_macrozonas(df_user, n_dias, cap_L_V_diaria)
-
-#     visitas_totales = df_user['CANTIDAD VISITAS'].sum()
-#     capacidades_por_dia = {d: 0 for d in dias_habiles_lista}
-    
-#     # 1. Balanceo de Carga Plano (Round Robin) — sin cambio de reglas de cupo
-#     restantes = visitas_totales
-#     while restantes > 0:
-#         candidatos = []
-#         for d in dias_habiles_lista:
-#             es_sab = (d.weekday() == 5)
-#             max_c = cap_sab_diaria if es_sab else cap_L_V_diaria
-#             if capacidades_por_dia[d] < max_c:
-#                 candidatos.append(d)
-        
-#         if not candidatos:
-#             break
-            
-#         candidatos.sort(key=lambda d: (capacidades_por_dia[d], 1 if d.weekday() == 5 else 0, d))
-#         mejor_d = candidatos[0]
-#         capacidades_por_dia[mejor_d] += 1
-#         restantes -= 1
-
-#     puntos_por_dia = {d: [] for d in dias_habiles_lista}
-    
-#     def centroide_dia(d):
-#         if not puntos_por_dia[d]: return None
-#         lats = [p['LATITUD_CLEAN'] for p in puntos_por_dia[d]]
-#         lons = [p['LONGITUD_CLEAN'] for p in puntos_por_dia[d]]
-#         return (sum(lats)/len(lats), sum(lons)/len(lons))
-
-#     def afinidad_macrozona(d, zona):
-#         pts = puntos_por_dia[d]
-#         if not pts:
-#             return 1
-#         mismas = sum(1 for p in pts if int(p.get('MACROZONA', -1)) == int(zona))
-#         if mismas == len(pts):
-#             return 0
-#         if mismas > 0:
-#             return 1
-#         return 2
-
-#     visitas_programadas = []
-#     df_user_sorted = df_user.sort_values(
-#         by=['MACROZONA', 'CANTIDAD VISITAS', 'LATITUD_CLEAN'],
-#         ascending=[True, False, False],
-#     )
-    
-#     for idx, row in df_user_sorted.iterrows():
-#         frecuencia = int(row['CANTIDAD VISITAS'])
-#         lat, lon = row['LATITUD_CLEAN'], row['LONGITUD_CLEAN']
-#         zona = int(row.get('MACROZONA', 0))
-        
-#         fechas_asignadas = []
-#         for v in range(frecuencia):
-#             candidatos = []
-#             for d in dias_habiles_lista:
-#                 if capacidades_por_dia[d] > 0:
-#                     if not fechas_asignadas:
-#                         candidatos.append(d)
-#                     else:
-#                         if all(abs((d - f).days) >= 8 for f in fechas_asignadas):
-#                             candidatos.append(d)
-            
-#             if not candidatos and v > 0:
-#                 candidatos = [d for d in dias_habiles_lista if capacidades_por_dia[d] > 0]
-                
-#             factibles = [d for d in candidatos if puede_agregar_a_dia(puntos_por_dia[d], row)]
-#             pool = factibles if factibles else candidatos
-
-#             mejor_dia = None
-#             mejor_key = None
-#             for d in pool:
-#                 c = centroide_dia(d)
-#                 if c is None:
-#                     dist = UMBRAL_NUEVO_DIA
-#                 else:
-#                     dist = haversine_distance(lat, lon, c[0], c[1])
-#                 if puntos_por_dia[d]:
-#                     dist_punto_cercano = min(
-#                         haversine_distance(
-#                             lat, lon, p['LATITUD_CLEAN'], p['LONGITUD_CLEAN']
-#                         ) for p in puntos_por_dia[d]
-#                     )
-#                 else:
-#                     dist_punto_cercano = UMBRAL_NUEVO_DIA
-#                 penal_limite = 0 if d in factibles else 1
-#                 key = (penal_limite, dist_punto_cercano, afinidad_macrozona(d, zona), dist, d)
-#                 if mejor_key is None or key < mejor_key:
-#                     mejor_key = key
-#                     mejor_dia = d
-                    
-#             if mejor_dia:
-#                 fechas_asignadas.append(mejor_dia)
-#                 capacidades_por_dia[mejor_dia] -= 1
-#                 puntos_por_dia[mejor_dia].append(row)
-#                 visitas_programadas.append({'FECHA': mejor_dia, 'DATA': row})
-
-#     rutas_optimizadas = []
-#     df_visitas = pd.DataFrame(visitas_programadas)
-    
-#     if df_visitas.empty: return []
-    
-#     dias_con_visitas = df_visitas['FECHA'].unique()
-#     dias_semana_es = {0: 'LUNES', 1: 'MARTES', 2: 'MIÉRCOLES', 3: 'JUEVES', 4: 'VIERNES', 5: 'SÁBADO', 6: 'DOMINGO'}
-    
-#     for dia in sorted(dias_con_visitas):
-#         puntos_del_dia = df_visitas[df_visitas['FECHA'] == dia]['DATA'].tolist()
-#         if not puntos_del_dia: continue
-        
-#         visitados = ordenar_ruta_diaria(puntos_del_dia)
-            
-#         hora_llegada_acumulada = 0.0
-        
-#         for orden, p in enumerate(visitados, 1):
-#             horas_visita = 0.75
-#             usuario = str(p.get('USUARIO', '')).lower()
-#             cadena = str(p.get('CADENA', '')).upper()
-            
-#             if usuario == "zona.panaleras":
-#                 horas_visita = 2.0
-#             elif cadena == "FARMATODO":
-#                 horas_visita = 1.0
-                
-#             fila = p.to_dict()
-#             fila['FECHA_PROGRAMADA'] = dia.strftime("%d/%m/%Y")
-#             fila['DIA_SEMANA'] = dias_semana_es[dia.weekday()]
-#             fila['ORDEN_VISITA'] = orden
-#             fila['HORAS_VISITA'] = horas_visita
-#             fila['HORA_LLEGADA_ESTIMADA (Hrs)'] = round(hora_llegada_acumulada, 2)
-            
-#             hora_llegada_acumulada += horas_visita + 0.25 
-#             fila['JORNADA_FINAL_DIA (Hrs)'] = round(hora_llegada_acumulada - 0.25, 2)
-            
-#             rutas_optimizadas.append(fila)
-            
-#         coords_str = "/".join([f"{p['LATITUD_CLEAN']},{p['LONGITUD_CLEAN']}" for p in visitados])
-#         link_maps = f"https://www.google.com/maps/dir/{coords_str}"
-        
-#         for r in rutas_optimizadas[-len(visitados):]:
-#             r['LINK_GOOGLE_MAPS'] = link_maps
-            
-#     return rutas_optimizadas
-
-def procesar_rutas_usuario(df_user, dias_habiles_lista, cap_L_V_diaria, cap_sab_diaria):
+def planificar_capacidades_usuario(dias_habiles_lista, total_visitas):
     """
-    Algoritmo de Rutas Inteligentes con Aislamiento Intermunicipal Puro y Compactación Geográfica Urbana.
+    Calcula la capacidad exacta de visitas para cada día del mes según la distribución balanceada:
+    - Sábados laborales: 4 visitas (siempre que el total alcance).
+    - Días L-V: (Total Mes - Visitas Sábados) / Días L-V.
+      Base = floor division.
+      Sobrante = residuo.
+      'sobrante' días tendrán (Base + 1) visitas, y el resto tendrá Base visitas.
+    - Condición de Sobrecarga (condición especial si Total Visitas > Máx Ideal):
+      Se aumenta primero entre semana (hasta 10 visitas/día), y si aún supera,
+      se incrementan los sábados a 5 visitas/día.
+    """
+    dias_sabados = [d for d in dias_habiles_lista if d.weekday() == 5]
+    dias_semana = [d for d in dias_habiles_lista if d.weekday() < 5]
+
+    n_sab = len(dias_sabados)
+    n_lv = len(dias_semana)
+    n_total = len(dias_habiles_lista)
+
+    if n_total == 0 or total_visitas <= 0:
+        return {d: 0 for d in dias_habiles_lista}
+
+    visitas_maximas_ideal = (n_lv * 8) + (n_sab * 4)
+    capacidades = {d: 0 for d in dias_habiles_lista}
+
+    es_sobrecarga = total_visitas > visitas_maximas_ideal
+
+    if not es_sobrecarga:
+        visitas_sab_total = min(total_visitas, n_sab * 4)
+        visitas_lv_total = total_visitas - visitas_sab_total
+
+        if n_sab > 0:
+            sab_base = visitas_sab_total // n_sab
+            sab_rem = visitas_sab_total % n_sab
+            for i, d in enumerate(dias_sabados):
+                capacidades[d] = sab_base + (1 if i < sab_rem else 0)
+
+        if n_lv > 0:
+            base_lv = visitas_lv_total // n_lv
+            sobrante_lv = visitas_lv_total % n_lv
+
+            indices_sobrante = set()
+            if sobrante_lv > 0:
+                paso = n_lv / sobrante_lv
+                indices_sobrante = {int(i * paso) % n_lv for i in range(sobrante_lv)}
+                idx_cand = 0
+                while len(indices_sobrante) < sobrante_lv and idx_cand < n_lv:
+                    indices_sobrante.add(idx_cand)
+                    idx_cand += 1
+
+            for i, d in enumerate(dias_semana):
+                capacidades[d] = base_lv + (1 if i in indices_sobrante else 0)
+    else:
+        # Condición especial de sobrecarga
+        visitas_sab_total = n_sab * 4
+        visitas_lv_total = total_visitas - visitas_sab_total
+
+        # Si supera 10 por día L-V, se amplían los sábados a 5
+        if n_lv > 0 and (visitas_lv_total / n_lv) > 10:
+            visitas_sab_total = n_sab * 5
+            visitas_lv_total = total_visitas - visitas_sab_total
+
+        if n_sab > 0:
+            sab_base = visitas_sab_total // n_sab
+            sab_rem = visitas_sab_total % n_sab
+            for i, d in enumerate(dias_sabados):
+                capacidades[d] = sab_base + (1 if i < sab_rem else 0)
+
+        if n_lv > 0:
+            base_lv = visitas_lv_total // n_lv
+            sobrante_lv = visitas_lv_total % n_lv
+            indices_sobrante = set()
+            if sobrante_lv > 0:
+                paso = n_lv / sobrante_lv
+                indices_sobrante = {int(i * paso) % n_lv for i in range(sobrante_lv)}
+                idx_cand = 0
+                while len(indices_sobrante) < sobrante_lv and idx_cand < n_lv:
+                    indices_sobrante.add(idx_cand)
+                    idx_cand += 1
+
+            for i, d in enumerate(dias_semana):
+                capacidades[d] = base_lv + (1 if i in indices_sobrante else 0)
+
+    return capacidades
+
+
+def procesar_rutas_usuario(df_user, dias_habiles_lista, cap_L_V_diaria=8, cap_sab_diaria=4):
+    """
+    Distribución balanceada de visitas y generación de rutas:
+    - Todas las visitas tienen una ruta asignada (cero visitas omitidas).
+    - Distribución equitativa calculada con planificar_capacidades_usuario.
+    - Manejo de puntos remotos (> 12km) agrupados en días exclusivos.
+    - Separación mínima de 7 días para PDVs con frecuencia > 1.
+    - Ordenamiento diario con TSP Nearest Neighbor y link de Google Maps.
     """
     df_user = df_user.dropna(subset=['LATITUD_CLEAN', 'LONGITUD_CLEAN']).copy()
-    if df_user.empty: return []
+    if df_user.empty:
+        return []
 
-    # 1. Determinar el centro operativo urbano (mediana de coordenadas)
+    visitas_totales = int(df_user['CANTIDAD VISITAS'].sum())
+    capacidades_por_dia = planificar_capacidades_usuario(dias_habiles_lista, visitas_totales)
+
     urban_lat = df_user['LATITUD_CLEAN'].median()
     urban_lon = df_user['LONGITUD_CLEAN'].median()
 
-    # 2. Identificar puntos remotos / intermunicipales (> 12 km del centro urbano - Regla 7)
     df_user['IS_REMOTE'] = df_user.apply(
-        lambda r: haversine_distance(urban_lat, urban_lon, r['LATITUD_CLEAN'], r['LONGITUD_CLEAN']) > 12.0, 
+        lambda r: haversine_distance(urban_lat, urban_lon, r['LATITUD_CLEAN'], r['LONGITUD_CLEAN']) > 12.0,
         axis=1
     )
+
+    n_dias = max(1, len([d for d, c in capacidades_por_dia.items() if c > 0]))
+    df_user = clusterizar_macrozonas(df_user, n_dias, cap_L_V_diaria)
+
+    puntos_por_dia = {d: [] for d in dias_habiles_lista}
+    cupo_restante = {d: capacidades_por_dia[d] for d in dias_habiles_lista}
+
+    def centroide_dia(d):
+        pts = puntos_por_dia[d]
+        if not pts:
+            return None
+        lats = [p['LATITUD_CLEAN'] for p in pts]
+        lons = [p['LONGITUD_CLEAN'] for p in pts]
+        return (sum(lats) / len(lats), sum(lons) / len(lons))
 
     df_remotos = df_user[df_user['IS_REMOTE']].copy()
     df_urbanos = df_user[~df_user['IS_REMOTE']].copy()
 
-    dias_disponibles = sorted(dias_habiles_lista)
-    dias_semana_es = {0: 'LUNES', 1: 'MARTES', 2: 'MIÉRCOLES', 3: 'JUEVES', 4: 'VIERNES', 5: 'SÁBADO', 6: 'DOMINGO'}
-    
-    rutas = []
-    dias_ocupados = set()
+    df_remotos_sorted = df_remotos.sort_values(
+        by=['CANTIDAD VISITAS', 'LATITUD_CLEAN', 'LONGITUD_CLEAN'],
+        ascending=[False, False, False]
+    )
+    df_urbanos_sorted = df_urbanos.sort_values(
+        by=['CANTIDAD VISITAS', 'MACROZONA', 'LATITUD_CLEAN', 'LONGITUD_CLEAN'],
+        ascending=[False, True, False, False]
+    )
 
-    # 3. FASE 1: Agrupar Puntos Remotos en Rutas Intermunicipales PURAS (Sin mezcla urbana)
-    if not df_remotos.empty:
-        remotos_records = []
-        for _, row in df_remotos.iterrows():
-            freq = int(row['CANTIDAD VISITAS'])
-            for _ in range(freq):
-                remotos_records.append(row.to_dict())
-        
-        # Agrupar los remotos por cercanía geográfica entre ellos en bloques de hasta 8 por día
-        while remotos_records and dias_disponibles:
-            # Tomar el remoto más periférico como semilla
-            seed = remotos_records.pop(0)
-            dia_asignado = dias_disponibles.pop(0)
-            dias_ocupados.add(dia_asignado)
-            
-            grupo_dia = [seed]
-            # Buscar otros remotos cercanos (hasta completar 8 o agotar el lote)
-            i = 0
-            while i < len(remotos_records) and len(grupo_dia) < 8:
-                cand = remotos_records[i]
-                # Verificar cercanía al grupo remoto actual
-                d_cercano = min(haversine_distance(cand['LATITUD_CLEAN'], cand['LONGITUD_CLEAN'], p['LATITUD_CLEAN'], p['LONGITUD_CLEAN']) for p in grupo_dia)
-                if d_cercano <= 15.0: # Rango geográfico intermunicipal coherente
-                    grupo_dia.append(remotos_records.pop(i))
+    df_ordenado = pd.concat([df_remotos_sorted, df_urbanos_sorted], ignore_index=True)
+    visitas_programadas = []
+
+    for _, row in df_ordenado.iterrows():
+        frecuencia = int(row['CANTIDAD VISITAS'])
+        lat, lon = row['LATITUD_CLEAN'], row['LONGITUD_CLEAN']
+        zona = int(row.get('MACROZONA', 0))
+        es_remoto = bool(row.get('IS_REMOTE', False))
+
+        fechas_asignadas_pdv = []
+
+        for v in range(frecuencia):
+            dias_disponibles = [
+                d for d in dias_habiles_lista
+                if cupo_restante[d] > 0 and d not in fechas_asignadas_pdv
+            ]
+            if not dias_disponibles:
+                dias_disponibles = [d for d in dias_habiles_lista if cupo_restante[d] > 0]
+                if not dias_disponibles:
+                    break
+
+            if es_remoto:
+                dias_con_remotos = [d for d in dias_disponibles if any(p.get('IS_REMOTE', False) for p in puntos_por_dia[d])]
+                if dias_con_remotos:
+                    dias_disponibles_pref = dias_con_remotos
                 else:
-                    i += 1
-                    
-            for p in grupo_dia:
-                rutas.append({'FECHA': dia_asignado, 'DATA': p})
+                    dias_vacios_lv = [d for d in dias_disponibles if len(puntos_por_dia[d]) == 0 and d.weekday() < 5]
+                    dias_disponibles_pref = dias_vacios_lv if dias_vacios_lv else dias_disponibles
+            else:
+                dias_sin_remotos = [d for d in dias_disponibles if not any(p.get('IS_REMOTE', False) for p in puntos_por_dia[d])]
+                dias_disponibles_pref = dias_sin_remotos if dias_sin_remotos else dias_disponibles
 
-    # 4. FASE 2: Agrupamiento Geográfico Compacto para Puntos Urbanos
-    if not df_urbanos.empty:
-        dias_urbanos_disponibles = [d for d in dias_habiles_lista if d not in dias_ocupados]
-        if not dias_urbanos_disponibles:
-            dias_urbanos_disponibles = dias_habiles_lista # Fallback si faltan días
+            candidatos_separados = []
+            if fechas_asignadas_pdv:
+                candidatos_separados = [
+                    d for d in dias_disponibles_pref
+                    if all(abs((d - f).days) >= 7 for f in fechas_asignadas_pdv)
+                ]
+            else:
+                candidatos_separados = list(dias_disponibles_pref)
 
-        current_df = df_urbanos.copy()
-        
-        while True:
-            pdvs = current_df.to_dict('records')
-            remaining_visits = {str(p['CODIGO PDV']): p['CANTIDAD VISITAS'] for p in pdvs}
-            last_visited = {str(p['CODIGO PDV']): None for p in pdvs}
-            rutas_urbanas_temp = []
-            
-            for dia in dias_urbanos_disponibles:
-                valid_pdvs = [p for p in pdvs if remaining_visits[str(p['CODIGO PDV'])] > 0 and (last_visited[str(p['CODIGO PDV'])] is None or (dia - last_visited[str(p['CODIGO PDV'])]).days >= 7)]
-                if not valid_pdvs: continue
-                
-                is_sab = (dia.weekday() == 5)
-                cap_objetivo = 4 if is_sab else 8
-                
-                # Semilla urbana: punto con mayor frecuencia pendiente y alta densidad local
-                max_rem = max(remaining_visits[str(p['CODIGO PDV'])] for p in valid_pdvs)
-                urgents = [p for p in valid_pdvs if remaining_visits[str(p['CODIGO PDV'])] == max_rem]
-                best_seed = max(urgents, key=lambda cand: sum(1 for o in valid_pdvs if haversine_distance(cand['LATITUD_CLEAN'], cand['LONGITUD_CLEAN'], o['LATITUD_CLEAN'], o['LONGITUD_CLEAN']) <= 1.5))
-                
-                grupo = [best_seed]
-                C_lat, C_lon = best_seed['LATITUD_CLEAN'], best_seed['LONGITUD_CLEAN']
-                r = 0.35 # Radio inicial 350 metros
-                
-                while len(grupo) < cap_objetivo:
-                    cands = [p for p in valid_pdvs if str(p['CODIGO PDV']) not in {str(x['CODIGO PDV']) for x in grupo}]
-                    if not cands: break
-                    cands.sort(key=lambda x: haversine_distance(C_lat, C_lon, x['LATITUD_CLEAN'], x['LONGITUD_CLEAN']))
-                    closest = cands[0]
-                    dist = haversine_distance(C_lat, C_lon, closest['LATITUD_CLEAN'], closest['LONGITUD_CLEAN'])
-                    
-                    if dist <= r or len(grupo) < 3:
-                        grupo.append(closest)
-                        C_lat = sum(p['LATITUD_CLEAN'] for p in grupo) / len(grupo)
-                        C_lon = sum(p['LONGITUD_CLEAN'] for p in grupo) / len(grupo)
-                        r = max(r, dist + 0.35)
+            if not candidatos_separados:
+                max_sep = -1
+                mejor_cand = dias_disponibles_pref[0]
+                for d in dias_disponibles_pref:
+                    if fechas_asignadas_pdv:
+                        dist_dias = min(abs((d - f).days) for f in fechas_asignadas_pdv)
                     else:
-                        break # Mantener compacidad urbana sin saltos extraños
-                        
-                for p in grupo:
-                    cod = str(p['CODIGO PDV'])
-                    rutas_urbanas_temp.append({'FECHA': dia, 'DATA': p})
-                    remaining_visits[cod] -= 1
-                    last_visited[cod] = dia
-                    
-            if sum(remaining_visits.values()) == 0:
-                rutas.extend(rutas_urbanas_temp)
-                break
-                
-            # Cascada de reducción si faltan días
-            freqs_activas = sorted([f for f in current_df['CANTIDAD VISITAS'].unique() if f > 1])
-            if not freqs_activas:
-                rutas.extend(rutas_urbanas_temp)
-                break
-            target_freq = freqs_activas[0]
-            mask = current_df['CANTIDAD VISITAS'] == target_freq
-            current_df.loc[mask, 'CANTIDAD VISITAS'] -= 1
-            current_df.loc[mask, 'FRECUENCIA_AJUSTADA'] = "SI"
+                        dist_dias = 0
+                    if dist_dias > max_sep:
+                        max_sep = dist_dias
+                        mejor_cand = d
+                pool = [mejor_cand]
+            else:
+                pool = candidatos_separados
 
-    # 5. Ordenamiento de rutas diarias (TSP Nearest Neighbor) y formateo de salida
-    df_visitas = pd.DataFrame(rutas)
-    if df_visitas.empty: return []
-    
+            mejor_dia = None
+            mejor_score = None
+
+            for d in pool:
+                c = centroide_dia(d)
+                pts = puntos_por_dia[d]
+
+                if pts:
+                    dist_min = min(
+                        haversine_distance(lat, lon, p['LATITUD_CLEAN'], p['LONGITUD_CLEAN'])
+                        for p in pts
+                    )
+                    dist_cg = haversine_distance(lat, lon, c[0], c[1])
+                    misma_zona = sum(1 for p in pts if int(p.get('MACROZONA', -1)) == zona)
+                    penal_zona = 0 if misma_zona > 0 else 0.5
+                    score = dist_min + (0.3 * dist_cg) + penal_zona
+                else:
+                    score = 2.0
+
+                if mejor_score is None or score < mejor_score:
+                    mejor_score = score
+                    mejor_dia = d
+
+            fechas_asignadas_pdv.append(mejor_dia)
+            cupo_restante[mejor_dia] -= 1
+            puntos_por_dia[mejor_dia].append(row)
+            visitas_programadas.append({'FECHA': mejor_dia, 'DATA': row})
+
+    dias_semana_es = {0: 'LUNES', 1: 'MARTES', 2: 'MIÉRCOLES', 3: 'JUEVES', 4: 'VIERNES', 5: 'SÁBADO', 6: 'DOMINGO'}
     rutas_optimizadas = []
-    for dia in sorted(df_visitas['FECHA'].unique(), key=lambda d: str(d)):
-        puntos_del_dia = df_visitas[df_visitas['FECHA'] == dia]['DATA'].tolist()
-        if not puntos_del_dia: continue
-        
+
+    for dia in sorted(dias_habiles_lista):
+        puntos_del_dia = puntos_por_dia[dia]
+        if not puntos_del_dia:
+            continue
+
         visitados = ordenar_ruta_diaria(puntos_del_dia)
         hora_llegada_acumulada = 0.0
-        
+
         for orden, p in enumerate(visitados, 1):
             horas_visita = 0.75
             usuario = str(p.get('USUARIO', '')).lower()
             cadena = str(p.get('CADENA', '')).upper()
-            if usuario == "zona.panaleras": horas_visita = 2.0
-            elif cadena == "FARMATODO": horas_visita = 1.0
-                
+            if usuario == "zona.panaleras":
+                horas_visita = 2.0
+            elif cadena == "FARMATODO":
+                horas_visita = 1.0
+
             fila = dict(p)
             fila['FECHA_PROGRAMADA'] = dia.strftime("%d/%m/%Y")
             fila['DIA_SEMANA'] = dias_semana_es[dia.weekday()]
             fila['ORDEN_VISITA'] = orden
             fila['HORAS_VISITA'] = horas_visita
             fila['HORA_LLEGADA_ESTIMADA (Hrs)'] = round(hora_llegada_acumulada, 2)
-            hora_llegada_acumulada += horas_visita + 0.25 
+            hora_llegada_acumulada += horas_visita + 0.25
             fila['JORNADA_FINAL_DIA (Hrs)'] = round(hora_llegada_acumulada - 0.25, 2)
             rutas_optimizadas.append(fila)
-            
+
         coords_str = "/".join([f"{p['LATITUD_CLEAN']},{p['LONGITUD_CLEAN']}" for p in visitados])
         link_maps = f"https://www.google.com/maps/dir/{coords_str}"
         for r in rutas_optimizadas[-len(visitados):]:
             r['LINK_GOOGLE_MAPS'] = link_maps
-            
+
     return rutas_optimizadas
 
 # --- LÓGICA DE MES POR DEFECTO ---
@@ -1478,24 +1195,46 @@ if st.session_state.mostrar_resumen and file_panel and file_maestro:
         st.write("Selecciona un usuario y un día para ver el recorrido detallado, o selecciona 'Todos' para ver la cobertura completa del mes.")
         
         df_rutas_mapa = st.session_state.df_rutas.copy()
-        usuarios_list = df_rutas_mapa['USUARIO'].dropna().unique().tolist()
+        usuarios_list = sorted(df_rutas_mapa['USUARIO'].dropna().unique().tolist())
+        opciones_usuarios = ["Todos"] + usuarios_list
         
         if usuarios_list:
             col_usr, col_dia, col_btn = st.columns([2, 2, 1])
             
             with col_usr:
-                user_sel = st.selectbox("👤 Seleccionar Usuario", usuarios_list)
+                user_sel = st.selectbox("👤 Seleccionar Usuario", opciones_usuarios, index=1 if len(opciones_usuarios) > 1 else 0)
             
             with col_dia:
-                dias_list = ["Todos"] + df_rutas_mapa[df_rutas_mapa['USUARIO'] == user_sel]['FECHA_PROGRAMADA'].dropna().unique().tolist()
+                if user_sel == "Todos":
+                    fechas_disponibles = sorted(
+                        df_rutas_mapa['FECHA_PROGRAMADA'].dropna().unique().tolist(),
+                        key=lambda d: pd.to_datetime(d, format="%d/%m/%Y", errors="coerce")
+                    )
+                else:
+                    fechas_disponibles = sorted(
+                        df_rutas_mapa[df_rutas_mapa['USUARIO'] == user_sel]['FECHA_PROGRAMADA'].dropna().unique().tolist(),
+                        key=lambda d: pd.to_datetime(d, format="%d/%m/%Y", errors="coerce")
+                    )
+                dias_list = ["Todos"] + fechas_disponibles
                 dia_sel = st.selectbox("📅 Seleccionar Día", dias_list)
                 
             with col_btn:
                 st.markdown("<br>", unsafe_allow_html=True)
                 ver_mapa = st.button("🗺️ Ver Mapa", type="primary", use_container_width=True)
                 
+            if 'mapa_generado' not in st.session_state:
+                st.session_state.mapa_generado = False
             if ver_mapa:
-                df_user_map = df_rutas_mapa[df_rutas_mapa['USUARIO'] == user_sel].copy()
+                st.session_state.mapa_generado = True
+
+            if st.session_state.mapa_generado:
+                if user_sel == "Todos":
+                    df_user_map = df_rutas_mapa.copy()
+                else:
+                    df_user_map = df_rutas_mapa[df_rutas_mapa['USUARIO'] == user_sel].copy()
+
+                if dia_sel != "Todos":
+                    df_user_map = df_user_map[df_user_map['FECHA_PROGRAMADA'] == dia_sel]
                 
                 df_user_map['LAT_NUM'] = df_user_map['LATITUD'].astype(str).str.replace(',', '.').astype(float, errors='ignore')
                 df_user_map['LON_NUM'] = df_user_map['LONGITUD'].astype(str).str.replace(',', '.').astype(float, errors='ignore')
@@ -1508,37 +1247,12 @@ if st.session_state.mostrar_resumen and file_panel and file_maestro:
                     centro_lat = df_user_map['LAT_NUM'].mean()
                     centro_lon = df_user_map['LON_NUM'].mean()
                     
-                    m = folium.Map(location=[centro_lat, centro_lon], zoom_start=12, tiles="CartoDB positron")
+                    m = folium.Map(location=[centro_lat, centro_lon], zoom_start=12, tiles="OpenStreetMap")
                     colores = ['#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990', '#dcbeff', '#9A6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', '#a9a9a9']
                     
-                    if dia_sel == "Todos":
-                        dias_unicos = df_user_map['FECHA_PROGRAMADA'].unique()
-                        for idx, dia in enumerate(dias_unicos):
-                            color_dia = colores[idx % len(colores)]
-                            df_dia = df_user_map[df_user_map['FECHA_PROGRAMADA'] == dia].sort_values(by='ORDEN_VISITA')
-                            coords = df_dia[['LAT_NUM', 'LON_NUM']].values.tolist()
-                            
-                            folium.PolyLine(
-                                coords, 
-                                color=color_dia, 
-                                weight=2.5, 
-                                opacity=0.7, 
-                                tooltip=f"Día: {dia}"
-                            ).add_to(m)
-                            
-                            for _, row in df_dia.iterrows():
-                                html_popup = f"<b>Día:</b> {row['FECHA_PROGRAMADA']}<br><b>Orden:</b> {row['ORDEN_VISITA']}<br><b>PDV:</b> {row['NOMBRE COMERCIAL']}"
-                                folium.CircleMarker(
-                                    location=[row['LAT_NUM'], row['LON_NUM']],
-                                    radius=4,
-                                    popup=folium.Popup(html_popup, max_width=300),
-                                    color=color_dia,
-                                    fill=True,
-                                    fill_color=color_dia,
-                                    fill_opacity=0.9
-                                ).add_to(m)
-                    else:
-                        df_dia = df_user_map[df_user_map['FECHA_PROGRAMADA'] == dia_sel].sort_values(by='ORDEN_VISITA')
+                    if user_sel != "Todos" and dia_sel != "Todos":
+                        # Ruta detallada de un usuario en un día con numeración de orden
+                        df_dia = df_user_map.sort_values(by='ORDEN_VISITA')
                         coords = df_dia[['LAT_NUM', 'LON_NUM']].values.tolist()
                         
                         folium.PolyLine(coords, color='blue', weight=3, opacity=0.8).add_to(m)
@@ -1566,11 +1280,249 @@ if st.session_state.mostrar_resumen and file_panel and file_maestro:
                                 tooltip=f"Visita {orden}: {row['NOMBRE COMERCIAL']}",
                                 icon=icono_numero
                             ).add_to(m)
+                    elif user_sel != "Todos" and dia_sel == "Todos":
+                        # Todas las rutas del usuario seleccionado diferenciadas por día
+                        dias_unicos = df_user_map['FECHA_PROGRAMADA'].unique()
+                        for idx, dia in enumerate(dias_unicos):
+                            color_dia = colores[idx % len(colores)]
+                            df_dia = df_user_map[df_user_map['FECHA_PROGRAMADA'] == dia].sort_values(by='ORDEN_VISITA')
+                            coords = df_dia[['LAT_NUM', 'LON_NUM']].values.tolist()
+                            
+                            folium.PolyLine(
+                                coords, 
+                                color=color_dia, 
+                                weight=2.5, 
+                                opacity=0.7, 
+                                tooltip=f"Día: {dia}"
+                            ).add_to(m)
+                            
+                            for _, row in df_dia.iterrows():
+                                html_popup = f"<b>Día:</b> {row['FECHA_PROGRAMADA']}<br><b>Orden:</b> {row['ORDEN_VISITA']}<br><b>PDV:</b> {row['NOMBRE COMERCIAL']}"
+                                folium.CircleMarker(
+                                    location=[row['LAT_NUM'], row['LON_NUM']],
+                                    radius=4,
+                                    popup=folium.Popup(html_popup, max_width=300),
+                                    color=color_dia,
+                                    fill=True,
+                                    fill_color=color_dia,
+                                    fill_opacity=0.9
+                                ).add_to(m)
+                    else:
+                        # Múltiples usuarios: colorear por usuario
+                        usuarios_en_mapa = df_user_map['USUARIO'].unique()
+                        for idx, usr in enumerate(usuarios_en_mapa):
+                            color_usr = colores[idx % len(colores)]
+                            df_sub = df_user_map[df_user_map['USUARIO'] == usr]
+                            for _, row in df_sub.iterrows():
+                                html_popup = f"<b>Usuario:</b> {row['USUARIO']}<br><b>Día:</b> {row['FECHA_PROGRAMADA']}<br><b>PDV:</b> {row['NOMBRE COMERCIAL']}"
+                                folium.CircleMarker(
+                                    location=[row['LAT_NUM'], row['LON_NUM']],
+                                    radius=5,
+                                    popup=folium.Popup(html_popup, max_width=300),
+                                    color=color_usr,
+                                    fill=True,
+                                    fill_color=color_usr,
+                                    fill_opacity=0.85
+                                ).add_to(m)
                             
                     with st.container():
-                        components.html(m._repr_html_(), height=600)
+                        components.html(m._repr_html_(), height=550)
                 else:
-                    st.warning("⚠️ No se encontraron coordenadas válidas para dibujar el mapa de este usuario.")
+                    st.warning("⚠️ No se encontraron coordenadas válidas para dibujar el mapa con los filtros seleccionados.")
+
+            # --- TABLA RESUMEN DINÁMICA DE DISTRIBUCIÓN DE VISITAS ---
+            st.divider()
+            st.markdown("### 📊 Tabla Resumen Dinámica de Distribución de Visitas")
+            st.caption(
+                "Esta tabla se actualiza automáticamente con los filtros superiores (**Usuario** y **Día**) "
+                "para validar que la distribución mensual de visitas sea perfectamente balanceada y equitativa."
+            )
+
+            df_filtro = df_rutas_mapa.copy()
+            if user_sel != "Todos":
+                df_filtro = df_filtro[df_filtro['USUARIO'] == user_sel]
+            if dia_sel != "Todos":
+                df_filtro = df_filtro[df_filtro['FECHA_PROGRAMADA'] == dia_sel]
+
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            total_visitas_filtro = len(df_filtro)
+            dias_con_visita = df_filtro['FECHA_PROGRAMADA'].nunique()
+            usuarios_con_visita = df_filtro['USUARIO'].nunique()
+            pdvs_unicos_filtro = df_filtro['CODIGO PDV'].nunique()
+
+            m_col1.metric("Visitas Programadas", total_visitas_filtro)
+            m_col2.metric("Días con Visita", dias_con_visita)
+            m_col3.metric("Usuarios Incluidos", usuarios_con_visita)
+            m_col4.metric("PDVs Distintos", pdvs_unicos_filtro)
+
+            if user_sel != "Todos" and dia_sel == "Todos":
+                # CASO 1: Un usuario específico y todos los días (Verificación del balance mensual)
+                st.markdown(f"**Distribución diaria en el mes para el usuario:** `{user_sel}`")
+                filas_resumen = []
+                fechas_ordenadas = sorted(
+                    df_filtro['FECHA_PROGRAMADA'].unique(),
+                    key=lambda x: pd.to_datetime(x, format="%d/%m/%Y", errors="coerce")
+                )
+                
+                for fec in fechas_ordenadas:
+                    g = df_filtro[df_filtro['FECHA_PROGRAMADA'] == fec]
+                    dia_sem = g['DIA_SEMANA'].iloc[0]
+                    tipo_dia = "Sábado" if dia_sem == "SÁBADO" else "Lunes a Viernes"
+                    cant_vis = len(g)
+                    pdvs_dist = g['CODIGO PDV'].nunique()
+                    jornada_hrs = g['JORNADA_FINAL_DIA (Hrs)'].max() if 'JORNADA_FINAL_DIA (Hrs)' in g.columns else 0.0
+
+                    filas_resumen.append({
+                        'Fecha': fec,
+                        'Día de la Semana': dia_sem,
+                        'Tipo de Día': tipo_dia,
+                        'Cantidad de Visitas': int(cant_vis),
+                        'PDVs Únicos': int(pdvs_dist),
+                        'Jornada Final Estimada (Hrs)': float(jornada_hrs)
+                    })
+
+                df_tabla_dinamica = pd.DataFrame(filas_resumen)
+
+                fila_total = pd.DataFrame([{
+                    'Fecha': 'TOTAL SUMATORIA',
+                    'Día de la Semana': f"{len(df_tabla_dinamica)} días programados",
+                    'Tipo de Día': '-',
+                    'Cantidad de Visitas': int(df_tabla_dinamica['Cantidad de Visitas'].sum()),
+                    'PDVs Únicos': int(pdvs_unicos_filtro),
+                    'Jornada Final Estimada (Hrs)': round(float(df_tabla_dinamica['Jornada Final Estimada (Hrs)'].sum()), 2)
+                }])
+                df_tabla_dinamica = pd.concat([df_tabla_dinamica, fila_total], ignore_index=True)
+
+                lv_rows = df_tabla_dinamica[(df_tabla_dinamica['Tipo de Día'] == 'Lunes a Viernes') & (df_tabla_dinamica['Fecha'] != 'TOTAL SUMATORIA')]
+                sab_rows = df_tabla_dinamica[(df_tabla_dinamica['Tipo de Día'] == 'Sábado') & (df_tabla_dinamica['Fecha'] != 'TOTAL SUMATORIA')]
+                conteo_lv = lv_rows['Cantidad de Visitas'].value_counts().to_dict()
+                conteo_sab = sab_rows['Cantidad de Visitas'].value_counts().to_dict()
+
+                desc_lv = " | ".join([f"**{cnt} días** de **{vis} visitas**" for vis, cnt in sorted(conteo_lv.items(), reverse=True)])
+                desc_sab = " | ".join([f"**{cnt} sábados** de **{vis} visitas**" for vis, cnt in sorted(conteo_sab.items(), reverse=True)])
+
+                st.success(
+                    f"⚖️ **Balance mensual del usuario {user_sel}:**<br>"
+                    f"- **Lunes a Viernes:** {desc_lv if desc_lv else 'Sin días L-V'}<br>"
+                    f"- **Sábados Laborales:** {desc_sab if desc_sab else 'Sin sábados laborales'}<br>"
+                    f"- **Sumatoria total de visitas:** **{total_visitas_filtro} visitas** (100% de las visitas con ruta asignada).",
+                    icon="✅"
+                )
+
+            elif user_sel != "Todos" and dia_sel != "Todos":
+                # CASO 2: Un usuario y un día específico
+                st.markdown(f"**Detalle de ruta del usuario:** `{user_sel}` para la fecha: `{dia_sel}`")
+                cols_detalle = [
+                    'ORDEN_VISITA', 'CODIGO PDV', 'NOMBRE COMERCIAL', 'CIUDAD', 
+                    'DIRECCION', 'HORAS_VISITA', 'HORA_LLEGADA_ESTIMADA (Hrs)'
+                ]
+                cols_existentes = [c for c in cols_detalle if c in df_filtro.columns]
+                df_tabla_dinamica = df_filtro[cols_existentes].sort_values(by='ORDEN_VISITA').copy()
+
+                df_tabla_dinamica = df_tabla_dinamica.rename(columns={
+                    'ORDEN_VISITA': 'Orden',
+                    'CODIGO PDV': 'Código PDV',
+                    'NOMBRE COMERCIAL': 'Nombre Comercial',
+                    'CIUDAD': 'Ciudad',
+                    'DIRECCION': 'Dirección',
+                    'HORAS_VISITA': 'Duración Visita (Hrs)',
+                    'HORA_LLEGADA_ESTIMADA (Hrs)': 'Llegada Estimada (Hrs)'
+                })
+
+                fila_total = pd.DataFrame([{
+                    'Orden': 'TOTAL',
+                    'Código PDV': f"{len(df_tabla_dinamica)} Visitas",
+                    'Nombre Comercial': 'Sumatoria de Visitas del Día',
+                    'Ciudad': '-',
+                    'Dirección': '-',
+                    'Duración Visita (Hrs)': round(float(df_tabla_dinamica['Duración Visita (Hrs)'].sum()), 2),
+                    'Llegada Estimada (Hrs)': '-'
+                }])
+                df_tabla_dinamica = pd.concat([df_tabla_dinamica, fila_total], ignore_index=True)
+
+            elif user_sel == "Todos" and dia_sel == "Todos":
+                # CASO 3: Todos los usuarios y todos los días
+                st.markdown("**Resumen general del mes por Usuario (Comparativo de Carga y Balance):**")
+                filas_usuarios = []
+                for u in sorted(df_filtro['USUARIO'].unique()):
+                    sub_u = df_filtro[df_filtro['USUARIO'] == u]
+                    lv = sub_u[sub_u['DIA_SEMANA'] != 'SÁBADO']
+                    sab = sub_u[sub_u['DIA_SEMANA'] == 'SÁBADO']
+                    dias_lv = lv['FECHA_PROGRAMADA'].nunique()
+                    dias_sab = sab['FECHA_PROGRAMADA'].nunique()
+                    tot_v = len(sub_u)
+
+                    lv_counts = lv.groupby('FECHA_PROGRAMADA').size().value_counts().to_dict()
+                    dist_lv_str = ", ".join([f"{c}d de {v}" for v, c in sorted(lv_counts.items(), reverse=True)])
+
+                    sab_counts = sab.groupby('FECHA_PROGRAMADA').size().value_counts().to_dict()
+                    dist_sab_str = ", ".join([f"{c}s de {v}" for v, c in sorted(sab_counts.items(), reverse=True)])
+
+                    filas_usuarios.append({
+                        'Usuario': u,
+                        'Total Visitas Mes': int(tot_v),
+                        'PDVs Únicos': int(sub_u['CODIGO PDV'].nunique()),
+                        'Días L-V': int(dias_lv),
+                        'Sábados': int(dias_sab),
+                        'Total Días': int(dias_lv + dias_sab),
+                        'Distribución L-V': dist_lv_str or "-",
+                        'Distribución Sábados': dist_sab_str or "-",
+                        'Promedio Visitas/Día': round(tot_v / max(1, (dias_lv + dias_sab)), 2)
+                    })
+
+                df_tabla_dinamica = pd.DataFrame(filas_usuarios)
+
+                fila_total = pd.DataFrame([{
+                    'Usuario': 'TOTAL GENERAL',
+                    'Total Visitas Mes': int(df_tabla_dinamica['Total Visitas Mes'].sum()),
+                    'PDVs Únicos': int(df_filtro['CODIGO PDV'].nunique()),
+                    'Días L-V': int(df_tabla_dinamica['Días L-V'].sum()),
+                    'Sábados': int(df_tabla_dinamica['Sábados'].sum()),
+                    'Total Días': int(df_tabla_dinamica['Total Días'].sum()),
+                    'Distribución L-V': '-',
+                    'Distribución Sábados': '-',
+                    'Promedio Visitas/Día': round(df_tabla_dinamica['Total Visitas Mes'].sum() / max(1, df_tabla_dinamica['Total Días'].sum()), 2)
+                }])
+                df_tabla_dinamica = pd.concat([df_tabla_dinamica, fila_total], ignore_index=True)
+
+            else:
+                # CASO 4: Todos los usuarios y un día específico
+                st.markdown(f"**Resumen de visitas para todos los usuarios en la fecha:** `{dia_sel}`")
+                filas_dia = []
+                for u in sorted(df_filtro['USUARIO'].unique()):
+                    sub_u = df_filtro[df_filtro['USUARIO'] == u]
+                    filas_dia.append({
+                        'Usuario': u,
+                        'Fecha': dia_sel,
+                        'Día de la Semana': sub_u['DIA_SEMANA'].iloc[0],
+                        'Cantidad de Visitas': int(len(sub_u)),
+                        'PDVs Programados': int(sub_u['CODIGO PDV'].nunique()),
+                        'Jornada Estimada (Hrs)': float(sub_u['JORNADA_FINAL_DIA (Hrs)'].max() if 'JORNADA_FINAL_DIA (Hrs)' in sub_u.columns else 0.0)
+                    })
+
+                df_tabla_dinamica = pd.DataFrame(filas_dia)
+
+                fila_total = pd.DataFrame([{
+                    'Usuario': 'TOTAL GENERAL',
+                    'Fecha': dia_sel,
+                    'Día de la Semana': df_tabla_dinamica['Día de la Semana'].iloc[0] if not df_tabla_dinamica.empty else '-',
+                    'Cantidad de Visitas': int(df_tabla_dinamica['Cantidad de Visitas'].sum()),
+                    'PDVs Programados': int(df_filtro['CODIGO PDV'].nunique()),
+                    'Jornada Estimada (Hrs)': round(float(df_tabla_dinamica['Jornada Estimada (Hrs)'].sum()), 2)
+                }])
+                df_tabla_dinamica = pd.concat([df_tabla_dinamica, fila_total], ignore_index=True)
+
+            def estilo_total(row):
+                val_col0 = str(row.iloc[0]).strip().upper()
+                if "TOTAL" in val_col0:
+                    return ['background-color: #e6f2ff; font-weight: bold; color: #003366'] * len(row)
+                return [''] * len(row)
+
+            st.dataframe(
+                df_tabla_dinamica.style.apply(estilo_total, axis=1),
+                use_container_width=True,
+                hide_index=True
+            )
 
         
 elif not st.session_state.mostrar_resumen:
